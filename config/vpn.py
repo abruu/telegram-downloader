@@ -174,6 +174,8 @@ class VpnManager:
             "--route", "149.154.160.0", "255.255.240.0",  # Telegram DC1-DC5
             "--route", "91.108.4.0", "255.255.252.0",     # Telegram additional
             "--route", "91.108.56.0", "255.255.252.0",    # Telegram additional
+            "--script-security", "2",  # Allow scripts for DNS
+            "--pull-filter", "ignore", "redirect-gateway",  # Ignore default gateway push
         ]
         if auth:
             cmd += ["--auth-user-pass", auth]

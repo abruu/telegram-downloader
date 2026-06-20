@@ -587,6 +587,8 @@ if [[ "${DO_AUTH,,}" != "n" ]]; then
         VPN_CMD="${VPN_CMD} --route 149.154.160.0 255.255.240.0"  # Telegram DC1-DC5
         VPN_CMD="${VPN_CMD} --route 91.108.4.0 255.255.252.0"     # Telegram additional
         VPN_CMD="${VPN_CMD} --route 91.108.56.0 255.255.252.0"    # Telegram additional
+        VPN_CMD="${VPN_CMD} --script-security 2"  # Allow scripts for DNS
+        VPN_CMD="${VPN_CMD} --pull-filter ignore redirect-gateway"  # Ignore default gateway push
         if [[ -n "${VPN_AUTH_VAL}" && -f "${VPN_AUTH_VAL}" ]]; then
             VPN_CMD="${VPN_CMD} --auth-user-pass ${VPN_AUTH_VAL}"
         fi
@@ -648,7 +650,9 @@ if [[ "${DO_AUTH,,}" != "n" ]]; then
         fi
     fi
 
-    python3 - << 'AUTHEOF'
+    # Create temporary auth script (heredoc can't handle interactive input)
+    AUTH_SCRIPT="/tmp/tg_auth_$$.py"
+    cat > "${AUTH_SCRIPT}" << 'AUTHEOF'
 import asyncio, os, sys
 from telethon import TelegramClient
 
@@ -669,6 +673,15 @@ async def auth():
 
 asyncio.run(auth())
 AUTHEOF
+
+    # Run the auth script with proper stdin
+    python3 "${AUTH_SCRIPT}"
+    AUTH_RESULT=$?
+    rm -f "${AUTH_SCRIPT}"
+
+    if [[ $AUTH_RESULT -ne 0 ]]; then
+        warn "Authentication failed or was interrupted"
+    fi
 
     # ── Stop VPN if we started it ──────────────────────────────
     if [[ "${VPN_ENABLED_VAL:-false}" == "true" ]]; then
