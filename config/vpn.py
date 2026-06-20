@@ -192,6 +192,8 @@ class VpnManager:
             return False
 
         # Wait up to _CONNECT_TIMEOUT seconds for tun interface to appear
+        # NOTE: with --daemon, openvpn forks into background and the parent
+        # exits immediately with rc=0 — this is normal, not a failure.
         deadline = time.monotonic() + _CONNECT_TIMEOUT
         while time.monotonic() < deadline:
             await asyncio.sleep(2)
@@ -199,8 +201,8 @@ class VpnManager:
                 log.info("[VPN] Tunnel is UP ✅")
                 self._retry_count = 0
                 return True
-            # Check if process died early
-            if self._process.returncode is not None:
+            # Only treat non-zero exit as a real failure (rc=0 is --daemon fork)
+            if self._process.returncode is not None and self._process.returncode != 0:
                 stderr = b""
                 try:
                     _, stderr = await asyncio.wait_for(
@@ -209,7 +211,7 @@ class VpnManager:
                 except asyncio.TimeoutError:
                     pass
                 log.error(
-                    f"[VPN] openvpn exited unexpectedly "
+                    f"[VPN] openvpn exited with error "
                     f"(rc={self._process.returncode}): "
                     f"{stderr.decode(errors='replace').strip()}"
                 )
@@ -222,13 +224,29 @@ class VpnManager:
         return False
 
     async def _kill_process(self) -> None:
-        """Terminate the openvpn process if it is still running."""
-        if self._process is None:
-            return
-        if self._process.returncode is None:
+        """Terminate the openvpn daemon process.
+
+        With --daemon, the subprocess we launched is just the parent that
+        forked into the background (rc=0). The actual running daemon must
+        be killed via pkill targeting the config file path.
+        """
+        cfg = settings.VPN_CONFIG_FILE or ""
+        try:
+            # Kill the real openvpn daemon by config file path
+            kill_proc = await asyncio.create_subprocess_exec(
+                "sudo", "pkill", "-f", f"openvpn.*{cfg}",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(kill_proc.wait(), timeout=5)
+        except Exception:
+            pass
+
+        # Also clean up the tracked subprocess if still alive
+        if self._process is not None and self._process.returncode is None:
             try:
                 self._process.terminate()
-                await asyncio.wait_for(self._process.wait(), timeout=10)
+                await asyncio.wait_for(self._process.wait(), timeout=5)
             except (asyncio.TimeoutError, ProcessLookupError):
                 try:
                     self._process.kill()
