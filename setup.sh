@@ -564,15 +564,90 @@ if [[ "${DO_AUTH,,}" != "n" ]]; then
     # Load env for the auth session
     export $(grep -v '^#' "${INSTALL_DIR}/.env" | xargs)
 
+    # ── Start VPN if enabled (before Telegram auth) ────────────
+    if [[ "${VPN_ENABLED_VAL:-false}" == "true" ]]; then
+        echo ""
+        echo -e "  ${CYAN}VPN is enabled — connecting before Telegram auth...${RESET}"
+
+        if ! command -v openvpn &>/dev/null; then
+            err "OpenVPN not found. Install it first: sudo apt install openvpn"
+            exit 1
+        fi
+
+        if [[ ! -f "${VPN_CONFIG_VAL}" ]]; then
+            err "VPN config file not found: ${VPN_CONFIG_VAL}"
+            exit 1
+        fi
+
+        # Start OpenVPN in background
+        VPN_CMD="sudo openvpn --config ${VPN_CONFIG_VAL} --daemon"
+        if [[ -n "${VPN_AUTH_VAL}" && -f "${VPN_AUTH_VAL}" ]]; then
+            VPN_CMD="${VPN_CMD} --auth-user-pass ${VPN_AUTH_VAL}"
+        fi
+
+        echo "  Starting VPN: ${VPN_CMD}"
+        eval "${VPN_CMD}" || {
+            err "Failed to start VPN"
+            exit 1
+        }
+
+        # Wait for tun interface to come up (max 60 seconds)
+        echo -n "  Waiting for VPN tunnel"
+        VPN_CONNECTED=false
+        for i in {1..60}; do
+            if ip link show 2>/dev/null | grep -q "tun\|tap"; then
+                echo ""
+                ok "VPN tunnel interface detected"
+                sleep 3  # Give routing tables time to update
+
+                # Verify we can reach the internet through VPN
+                echo -n "  Testing VPN connectivity"
+                if timeout 10 curl -s --max-time 5 https://api.telegram.org >/dev/null 2>&1; then
+                    echo ""
+                    ok "VPN connected and Telegram reachable ✓"
+                    VPN_CONNECTED=true
+                    break
+                else
+                    echo " (tunnel up but no connectivity yet)"
+                fi
+            fi
+            echo -n "."
+            sleep 1
+            if [[ $i -eq 60 ]]; then
+                echo ""
+                err "VPN tunnel not ready after 60s"
+                echo ""
+                echo -e "${YELLOW}Troubleshooting:${RESET}"
+                echo "  1. Check VPN logs: sudo journalctl -xe | grep openvpn"
+                echo "  2. Test manually: sudo openvpn --config ${VPN_CONFIG_VAL}"
+                echo "  3. Verify credentials in ${VPN_AUTH_VAL}"
+                echo ""
+                read -rp "Continue without VPN? [y/N]: " CONTINUE_NO_VPN
+                if [[ "${CONTINUE_NO_VPN,,}" != "y" ]]; then
+                    exit 1
+                fi
+            fi
+        done
+        echo ""
+
+        if [[ "$VPN_CONNECTED" == "false" ]]; then
+            warn "Proceeding without confirmed VPN connection"
+        fi
+    fi
+
     python3 - << 'AUTHEOF'
 import asyncio, os, sys
 from telethon import TelegramClient
 
 async def auth():
+    # Increase timeouts for VPN connections
     client = TelegramClient(
         os.getenv("SESSION_PATH", "./data/userbot_session"),
         int(os.getenv("TELEGRAM_API_ID")),
-        os.getenv("TELEGRAM_API_HASH")
+        os.getenv("TELEGRAM_API_HASH"),
+        connection_retries=10,
+        retry_delay=5,
+        timeout=30
     )
     await client.start()
     me = await client.get_me()
@@ -581,6 +656,15 @@ async def auth():
 
 asyncio.run(auth())
 AUTHEOF
+
+    # ── Stop VPN if we started it ──────────────────────────────
+    if [[ "${VPN_ENABLED_VAL:-false}" == "true" ]]; then
+        echo ""
+        echo -e "  ${CYAN}Stopping VPN (auth complete)...${RESET}"
+        sudo pkill -f "openvpn.*${VPN_CONFIG_VAL}" 2>/dev/null || true
+        sleep 1
+        ok "VPN stopped"
+    fi
 
     ok "Telethon session saved — no login needed on future starts"
 else
