@@ -535,6 +535,16 @@ if command -v systemctl &>/dev/null && [[ -d /etc/systemd/system ]]; then
             && sudo systemctl daemon-reload \
             && ok "Service installed" \
             || warn "Could not install service — you can do it later with: sudo cp tgbot.service /etc/systemd/system/"
+
+        # If VPN is enabled, add passwordless sudo for openvpn
+        if [[ "${VPN_ENABLED_VAL:-false}" == "true" ]]; then
+            echo ""
+            echo -e "  ${CYAN}VPN enabled — configuring passwordless sudo for OpenVPN...${RESET}"
+            SUDOERS_RULE="${INSTALL_USER} ALL=(ALL) NOPASSWD: /usr/sbin/openvpn, /usr/bin/pkill"
+            echo "${SUDOERS_RULE}" | sudo tee /etc/sudoers.d/openvpn-bot >/dev/null
+            sudo chmod 0440 /etc/sudoers.d/openvpn-bot
+            ok "Sudoers rule added (required for systemd + VPN)"
+        fi
     else
         ok "Skipped — you can install later with: sudo cp tgbot.service /etc/systemd/system/"
     fi
