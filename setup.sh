@@ -566,10 +566,6 @@ if [[ "${DO_AUTH,,}" != "n" ]]; then
 
     python3 - << 'AUTHEOF'
 import asyncio, os, sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else '.')
-from dotenv import load_dotenv
-load_dotenv()
-
 from telethon import TelegramClient
 
 async def auth():
