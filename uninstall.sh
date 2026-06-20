@@ -26,7 +26,6 @@ cat << 'BANNER'
   ║  This will remove:                                   ║
   ║   • Python dependencies (telethon, telegram, etc.)   ║
   ║   • Systemd service (if installed)                   ║
-  ║   • OpenVPN (optional)                               ║
   ║   • Bot data and downloads (optional)                ║
   ╚══════════════════════════════════════════════════════╝
 BANNER
@@ -87,20 +86,20 @@ ok "Python packages removed"
 # ════════════════════════════════════════════════════════
 #  STEP 3 — Remove OpenVPN (optional)
 # ════════════════════════════════════════════════════════
-hdr "Step 3 — OpenVPN"
+# hdr "Step 3 — OpenVPN"
 
-if command -v openvpn &>/dev/null; then
-    echo ""
-    echo -e "${YELLOW}OpenVPN is installed on this system.${RESET}"
-    read -rp "  Remove OpenVPN? [y/N]: " REMOVE_OPENVPN
-    if [[ "${REMOVE_OPENVPN,,}" == "y" ]]; then
-        sudo apt-get remove -y openvpn 2>/dev/null && ok "OpenVPN removed"
-    else
-        ok "OpenVPN kept"
-    fi
-else
-    ok "OpenVPN not installed"
-fi
+# if command -v openvpn &>/dev/null; then
+#     echo ""
+#     echo -e "${YELLOW}OpenVPN is installed on this system.${RESET}"
+#     read -rp "  Remove OpenVPN? [y/N]: " REMOVE_OPENVPN
+#     if [[ "${REMOVE_OPENVPN,,}" == "y" ]]; then
+#         sudo apt-get remove -y openvpn 2>/dev/null && ok "OpenVPN removed"
+#     else
+#         ok "OpenVPN kept"
+#     fi
+# else
+#     ok "OpenVPN not installed"
+# fi
 
 
 # ════════════════════════════════════════════════════════
@@ -194,7 +193,7 @@ if [[ "${REMOVE_SOURCE,,}" == "y" ]]; then
     rm -f "${INSTALL_DIR}/.gitignore" && ok ".gitignore removed"
     rm -f "${INSTALL_DIR}/README.md" && ok "README.md removed"
     rm -f "${INSTALL_DIR}/LICENSE" && ok "LICENSE removed"
-    
+
     # Remove the directory if it's empty
     if [[ -z "$(ls -A "${INSTALL_DIR}")" ]]; then
         cd ..
@@ -218,7 +217,7 @@ echo ""
 echo -e "${BOLD}What was removed:${RESET}"
 echo "  ✓  Python dependencies (telethon, python-telegram-bot, etc.)"
 echo "  ✓  Systemd service (if installed)"
-[[ "${REMOVE_OPENVPN,,}" == "y" ]] && echo "  ✓  OpenVPN"
+# [[ "${REMOVE_OPENVPN,,}" == "y" ]] && echo "  ✓  OpenVPN"
 [[ "${REMOVE_DATA,,}" == "y" ]] && echo "  ✓  Bot data (databases, logs, downloads)"
 [[ "${REMOVE_MEDIA,,}" == "y" ]] && echo "  ✓  Media library"
 [[ "${REMOVE_ENV,,}" == "y" ]] && echo "  ✓  Configuration (.env)"
