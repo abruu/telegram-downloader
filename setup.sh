@@ -283,6 +283,19 @@ class _Settings:
         if not raw: return []
         return [int(x.strip()) for x in raw.split(",") if x.strip()]
 
+    @property
+    def VPN_ENABLED(self):
+        return os.getenv("VPN_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+
+    VPN_CONFIG_FILE = _opt("VPN_CONFIG_FILE")
+    VPN_AUTH_FILE   = _opt("VPN_AUTH_FILE")
+
+    @property
+    def VPN_RECONNECT(self):
+        return os.getenv("VPN_RECONNECT", "true").strip().lower() not in ("false", "0", "no")
+
+    VPN_MAX_RETRIES = _int("VPN_MAX_RETRIES", 5)
+
 settings = _Settings()
 PYEOF
 ok "config/settings.py written"
@@ -357,6 +370,43 @@ if [[ -z "${SKIP_ENV:-}" ]]; then
     DL_PATH_VAL="${DL_PATH_VAL:-${MEDIA_PATH_VAL}/downloads}"
     mkdir -p "$DL_PATH_VAL"
 
+    echo ""
+    echo -e "  ${CYAN}VPN (OpenVPN)${RESET} — route all traffic through a VPN tunnel"
+    read -rp "  Enable VPN? [y/N]: " VPN_CHOICE
+    VPN_ENABLED_VAL="false"
+    VPN_CONFIG_VAL=""
+    VPN_AUTH_VAL=""
+    VPN_RECONNECT_VAL="true"
+    VPN_MAX_RETRIES_VAL="5"
+    if [[ "${VPN_CHOICE,,}" == "y" ]]; then
+        # Check openvpn is installed
+        if ! command -v openvpn &>/dev/null; then
+            warn "'openvpn' not found — attempting to install..."
+            sudo apt-get install -y openvpn 2>/dev/null \
+                && ok "openvpn installed" \
+                || warn "Could not auto-install openvpn. Install it manually: sudo apt install openvpn"
+        else
+            ok "openvpn found ($(openvpn --version 2>&1 | head -1))"
+        fi
+        while true; do
+            read -rp "  Path to your .ovpn config file: " VPN_CONFIG_VAL
+            [[ -f "$VPN_CONFIG_VAL" ]] && break
+            err "File not found: $VPN_CONFIG_VAL — try again (absolute path)"
+        done
+        read -rp "  Path to credentials file (user/pass, leave blank if not needed): " VPN_AUTH_VAL
+        if [[ -n "$VPN_AUTH_VAL" && ! -f "$VPN_AUTH_VAL" ]]; then
+            warn "Credentials file not found: $VPN_AUTH_VAL — you can set it later in .env"
+        fi
+        read -rp "  Auto-reconnect on tunnel drop? [Y/n]: " VPN_RECONNECT_CHOICE
+        [[ "${VPN_RECONNECT_CHOICE,,}" == "n" ]] && VPN_RECONNECT_VAL="false"
+        read -rp "  Max reconnect attempts (0=unlimited) [default: 5]: " VPN_MAX_RETRIES_INPUT
+        VPN_MAX_RETRIES_VAL="${VPN_MAX_RETRIES_INPUT:-5}"
+        VPN_ENABLED_VAL="true"
+        ok "VPN configured (${VPN_CONFIG_VAL})"
+    else
+        ok "VPN skipped — you can enable it later by editing .env"
+    fi
+
     hdr "Writing .env"
 
     cat > "${INSTALL_DIR}/.env" << EOF
@@ -378,6 +428,13 @@ REQUEST_LOG_DB=${INSTALL_DIR}/data/request_log.db
 MEDIA_DB=${INSTALL_DIR}/data/media_library.db
 USERS_FILE=${INSTALL_DIR}/data/users.json
 LOG_FILE=${INSTALL_DIR}/logs/bot.log
+
+# VPN
+VPN_ENABLED=${VPN_ENABLED_VAL}
+VPN_CONFIG_FILE=${VPN_CONFIG_VAL}
+VPN_AUTH_FILE=${VPN_AUTH_VAL}
+VPN_RECONNECT=${VPN_RECONNECT_VAL}
+VPN_MAX_RETRIES=${VPN_MAX_RETRIES_VAL}
 EOF
 
     chmod 600 "${INSTALL_DIR}/.env"

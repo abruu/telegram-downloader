@@ -87,5 +87,19 @@ class _Settings:
             return []
         return [int(x.strip()) for x in raw.split(",") if x.strip()]
 
+    # --- VPN ---
+    @property
+    def VPN_ENABLED(self) -> bool:
+        return os.getenv("VPN_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+
+    VPN_CONFIG_FILE:  str = _optional("VPN_CONFIG_FILE")
+    VPN_AUTH_FILE:    str = _optional("VPN_AUTH_FILE")
+
+    @property
+    def VPN_RECONNECT(self) -> bool:
+        return os.getenv("VPN_RECONNECT", "true").strip().lower() not in ("false", "0", "no")
+
+    VPN_MAX_RETRIES:  int = _int("VPN_MAX_RETRIES", 5)
+
 
 settings = _Settings()

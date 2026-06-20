@@ -37,6 +37,7 @@ from telegram.ext import (
 )
 from telegram.error import RetryAfter, TimedOut, NetworkError
 from config.settings import settings
+from config.vpn import VpnManager
 # Import our classifier module
 from media_classifier import (
     MediaClassifier, MediaInfo, parse_filename,
@@ -1687,6 +1688,21 @@ async def main():
     log.info("  Telegram Download Bot v8.0 — Radarr/Sonarr Style")
     log.info("═"*60)
 
+    # ── VPN ───────────────────────────────────────────────────────
+    vpn = VpnManager()
+    if vpn.is_enabled():
+        log.info("[VPN] Enabled — connecting before Telegram…")
+        try:
+            connected = await vpn.start()
+            if not connected:
+                log.error("[VPN] Could not establish VPN connection. Aborting.")
+                sys.exit(1)
+        except RuntimeError as exc:
+            log.error(str(exc))
+            sys.exit(1)
+    else:
+        log.info("[VPN] Disabled.")
+
     await dbot.client.start()
     me = await dbot.client.get_me()
     log.info(f"[Telegram] ✅ Connected Successfully (user={me.first_name} id={me.id})")
@@ -1710,6 +1726,7 @@ async def main():
             stor_ok  = "✅" if health.get("storage")  else "❌"
             auto_cls = "✅ enabled" if dbot.classifier.health_mon.auto_classify_enabled \
                        else "⚠️ DISABLED (manual approval mode)"
+            vpn_ok   = "🔒 " + vpn.status_line() if vpn.is_enabled() else "🔓 disabled"
             await dbot.bot.send_message(YOUR_USER_ID,
                 f"🟢 *Bot v8.0 Online!*\n\n"
                 f"⚡ Streams: `{PARALLEL_CONNECTIONS}×`\n"
@@ -1720,6 +1737,7 @@ async def main():
                 f"  TMDB:     {tmdb_ok}\n"
                 f"  Database: {db_ok}\n"
                 f"  Storage:  {stor_ok}\n\n"
+                f"🌐 VPN:     {vpn_ok}\n"
                 f"🤖 Auto-classify: `{auto_cls}`\n"
                 f"🕐 `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
                 parse_mode="Markdown")
@@ -1768,8 +1786,31 @@ async def main():
     dbot.audit.close()
     await app.updater.stop(); await app.stop(); await app.shutdown()
     await dbot.client.disconnect()
+    await vpn.stop()
     log.info("✅ Shutdown complete")
 
 
+def _parse_vpn_flag() -> None:
+    """
+    Check for --vpn=true / --vpn=false / --vpn=1 / --vpn=0 in sys.argv
+    and inject the result into the environment so VpnManager picks it up.
+    The flag overrides whatever VPN_ENABLED is set to in .env.
+    """
+    for arg in sys.argv[1:]:
+        if arg.startswith("--vpn="):
+            val = arg.split("=", 1)[1].lower()
+            if val in ("true", "1", "yes"):
+                os.environ["VPN_ENABLED"] = "true"
+                log.info("[CLI] --vpn=true → VPN forced ON")
+            elif val in ("false", "0", "no"):
+                os.environ["VPN_ENABLED"] = "false"
+                log.info("[CLI] --vpn=false → VPN forced OFF")
+            else:
+                print(f"\n❌  Unknown --vpn value: '{val}'. Use --vpn=true or --vpn=false\n")
+                sys.exit(1)
+            break
+
+
 if __name__ == "__main__":
+    _parse_vpn_flag()
     asyncio.run(main())
