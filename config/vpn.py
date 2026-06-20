@@ -167,33 +167,37 @@ class VpnManager:
         auth   = settings.VPN_AUTH_FILE
 
         # Split tunneling: only route Telegram IPs through VPN
-        # Prevents VPN from becoming the default gateway for ALL traffic
+        # Prevents VPN from becoming the default gateway for ALL traffic.
+        # Run via sudo (needed to create tun device) WITHOUT --daemon so
+        # we hold the process handle and can monitor/kill it directly.
+        vpn_log = "/tmp/openvpn-bot.log"
         cmd = [
-            binary, "--config", cfg, "--daemon",
+            "sudo", binary,
+            "--config", cfg,
+            "--log", vpn_log,
             "--route-nopull",  # Don't accept server's routing config
             "--route", "149.154.160.0", "255.255.240.0",  # Telegram DC1-DC5
             "--route", "91.108.4.0", "255.255.252.0",     # Telegram additional
             "--route", "91.108.56.0", "255.255.252.0",    # Telegram additional
-            "--script-security", "2",  # Allow scripts for DNS
-            "--pull-filter", "ignore", "redirect-gateway",  # Ignore default gateway push
+            "--script-security", "2",
+            "--pull-filter", "ignore", "redirect-gateway",
         ]
         if auth:
             cmd += ["--auth-user-pass", auth]
 
         log.info(f"[VPN] Starting OpenVPN (split tunnel - Telegram only): {' '.join(cmd)}")
+        log.info(f"[VPN] OpenVPN log: {vpn_log}")
         try:
             self._process = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
         except Exception as exc:
             log.error(f"[VPN] Failed to launch openvpn: {exc}")
             return False
 
         # Wait up to _CONNECT_TIMEOUT seconds for tun interface to appear
-        # NOTE: with --daemon, openvpn forks into background and the parent
-        # exits immediately with rc=0 — this is normal, not a failure.
         deadline = time.monotonic() + _CONNECT_TIMEOUT
         while time.monotonic() < deadline:
             await asyncio.sleep(2)
@@ -201,19 +205,12 @@ class VpnManager:
                 log.info("[VPN] Tunnel is UP ✅")
                 self._retry_count = 0
                 return True
-            # Only treat non-zero exit as a real failure (rc=0 is --daemon fork)
-            if self._process.returncode is not None and self._process.returncode != 0:
-                stderr = b""
-                try:
-                    _, stderr = await asyncio.wait_for(
-                        self._process.communicate(), timeout=2
-                    )
-                except asyncio.TimeoutError:
-                    pass
+            # Process died before tunnel came up — real failure
+            if self._process.returncode is not None:
                 log.error(
-                    f"[VPN] openvpn exited with error "
-                    f"(rc={self._process.returncode}): "
-                    f"{stderr.decode(errors='replace').strip()}"
+                    f"[VPN] openvpn exited unexpectedly "
+                    f"(rc={self._process.returncode}). "
+                    f"Check {vpn_log} for details."
                 )
                 return False
 

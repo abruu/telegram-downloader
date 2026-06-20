@@ -530,9 +530,13 @@ class DownloadBot:
         n += sum(1 for j in list(self._queue._queue) if j.user_id == uid)
         return n
 
-    async def _tg_call(self, coro, retries=3):
+    async def _tg_call(self, coro_fn, retries=3):
         """
-        Retry a python-telegram-bot coroutine with exponential backoff.
+        Retry a python-telegram-bot API call with exponential backoff.
+        coro_fn must be a zero-argument callable that returns a fresh coroutine
+        each time it is called (e.g. lambda: bot.send_message(...)).
+        A coroutine object can only be awaited once; passing the same coroutine
+        on retry causes "cannot reuse already awaited coroutine".
         Attempt 1 → wait 5s
         Attempt 2 → wait 15s
         Attempt 3 → wait 30s
@@ -542,7 +546,7 @@ class DownloadBot:
         for i in range(retries):
             t0 = time.time()
             try:
-                result = await coro
+                result = await coro_fn()
                 return result
             except RetryAfter as e:
                 wait = e.retry_after + 1
@@ -567,8 +571,8 @@ class DownloadBot:
     async def send(self, chat_id, text, markup=None) -> Optional[int]:
         try:
             m = await self._tg_call(
-                self.bot.send_message(chat_id=chat_id, text=text,
-                                      parse_mode="Markdown", reply_markup=markup))
+                lambda: self.bot.send_message(chat_id=chat_id, text=text,
+                                              parse_mode="Markdown", reply_markup=markup))
             return m.message_id if m else None
         except Exception as e:
             log.warning(f"send: {e}"); return None
@@ -577,7 +581,7 @@ class DownloadBot:
         if not msg_id: return
         try:
             await self._tg_call(
-                self.bot.edit_message_text(
+                lambda: self.bot.edit_message_text(
                     chat_id=chat_id, message_id=msg_id,
                     text=text, parse_mode="Markdown", reply_markup=markup))
         except Exception as e:
