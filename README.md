@@ -121,6 +121,7 @@ After setup completes:
 
 ```bash
 sudo systemctl start tgbot     # if you chose systemd
+sudo systemctl start/stop/restart tgbot
 # or
 python3 tg_downloader_bot.py   # run directly
 
