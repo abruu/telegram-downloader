@@ -579,17 +579,30 @@ if [[ "${DO_AUTH,,}" != "n" ]]; then
             exit 1
         fi
 
-        # Start OpenVPN in background
-        VPN_CMD="sudo openvpn --config ${VPN_CONFIG_VAL} --daemon"
+        # Start OpenVPN in background with split tunneling
+        # Only route Telegram IPs through VPN, not all traffic
+        VPN_LOG="/tmp/openvpn-setup-$$.log"
+        VPN_CMD="sudo openvpn --config ${VPN_CONFIG_VAL} --daemon --log ${VPN_LOG}"
+        VPN_CMD="${VPN_CMD} --route-nopull"  # Don't use server's default routes
+        VPN_CMD="${VPN_CMD} --route 149.154.160.0 255.255.240.0"  # Telegram DC1-DC5
+        VPN_CMD="${VPN_CMD} --route 91.108.4.0 255.255.252.0"     # Telegram additional
+        VPN_CMD="${VPN_CMD} --route 91.108.56.0 255.255.252.0"    # Telegram additional
         if [[ -n "${VPN_AUTH_VAL}" && -f "${VPN_AUTH_VAL}" ]]; then
             VPN_CMD="${VPN_CMD} --auth-user-pass ${VPN_AUTH_VAL}"
         fi
 
-        echo "  Starting VPN: ${VPN_CMD}"
-        eval "${VPN_CMD}" || {
-            err "Failed to start VPN"
+        echo "  Starting VPN (split tunnel - Telegram traffic only)..."
+        echo "  Your server's other traffic will NOT use VPN"
+        eval "${VPN_CMD}" 2>&1 | grep -v "dbus-org.freedesktop.resolve1" || true
+
+        sleep 2  # Give OpenVPN time to initialize
+
+        # Check if process started
+        if ! pgrep -f "openvpn.*${VPN_CONFIG_VAL}" >/dev/null; then
+            err "OpenVPN process failed to start"
+            echo "  Check log: ${VPN_LOG}"
             exit 1
-        }
+        fi
 
         # Wait for tun interface to come up (max 60 seconds)
         echo -n "  Waiting for VPN tunnel"

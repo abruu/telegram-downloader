@@ -166,11 +166,19 @@ class VpnManager:
         cfg    = settings.VPN_CONFIG_FILE
         auth   = settings.VPN_AUTH_FILE
 
-        cmd = [binary, "--config", cfg, "--daemon"]
+        # Split tunneling: only route Telegram IPs through VPN
+        # Prevents VPN from becoming the default gateway for ALL traffic
+        cmd = [
+            binary, "--config", cfg, "--daemon",
+            "--route-nopull",  # Don't accept server's routing config
+            "--route", "149.154.160.0", "255.255.240.0",  # Telegram DC1-DC5
+            "--route", "91.108.4.0", "255.255.252.0",     # Telegram additional
+            "--route", "91.108.56.0", "255.255.252.0",    # Telegram additional
+        ]
         if auth:
             cmd += ["--auth-user-pass", auth]
 
-        log.info(f"[VPN] Starting OpenVPN: {' '.join(cmd)}")
+        log.info(f"[VPN] Starting OpenVPN (split tunnel - Telegram only): {' '.join(cmd)}")
         try:
             self._process = await asyncio.create_subprocess_exec(
                 *cmd,

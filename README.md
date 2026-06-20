@@ -86,7 +86,7 @@ Configurable multi-stream downloads (default: 4 parallel connections) for maximu
 
 ### 🔒 VPN Support
 
-Built-in OpenVPN integration routes all Telegram traffic through a VPN tunnel. Auto-reconnect on connection drops, configurable retry limits, and connection health monitoring.
+Built-in OpenVPN integration with **split tunneling** — only Telegram traffic goes through the VPN, your server's other traffic remains unaffected. Auto-reconnect on connection drops, configurable retry limits, and connection health monitoring.
 
 ### 🩺 Health Monitoring
 
